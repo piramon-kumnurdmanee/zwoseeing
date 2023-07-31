@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 #env_filename = os.getenv('ZWO_ASI_LIB')
 #print (env_filename)
 
-path = '/Users/piramonkumnurdmanee/Documents/lamat-python/venv/lib/python3.10/site-packages/libASICamera2.dylib'		#hardcoded path. Needs to be adjusted on each computer 
+path = '/Users/piramonkumnurdmanee/Documents/zwoseeing/venv/lib/python3.10/site-packages/libASICamera2.dylib'		#hardcoded path. Needs to be adjusted on each computer 
 
 asi.init(path)   #The first time this is run you will need to go to your System Preferences under "Security and Privacy" and click "Open Anyway"
 
@@ -49,12 +49,12 @@ camera.set_control_value(asi.ASI_BANDWIDTHOVERLOAD, camera.get_controls()['BandW
 camera.disable_dark_subtract()
 
 camera.set_control_value(asi.ASI_GAIN, 100)
-camera.set_control_value(asi.ASI_EXPOSURE, 1300000) # microseconds   This saturated the images
-camera.set_control_value(asi.ASI_EXPOSURE, 15000) # microseconds		Nominal value
+camera.set_control_value(asi.ASI_EXPOSURE, 130000) # microseconds   This saturated the images
+camera.set_control_value(asi.ASI_EXPOSURE, 30000) # microseconds		Nominal value
 camera.set_control_value(asi.ASI_WB_B, 99)
 camera.set_control_value(asi.ASI_WB_R, 75)
 camera.set_control_value(asi.ASI_GAMMA, 50)
-camera.set_control_value(asi.ASI_BRIGHTNESS, 50)
+camera.set_control_value(asi.ASI_BRIGHTNESS, 500)
 camera.set_control_value(asi.ASI_FLIP, 0)
 
 
@@ -73,126 +73,95 @@ cv2.moveWindow(resultname, displaycoloffset,000)
 # Find the brightest point
 # Find Centroid
 def find_image_centroid(image):
+    start = time.time()
     height, width = image.shape
     sum_x, sum_y, total = 0, 0, 0
+    # Find a new way to write new. For loop usually take long time 
+    # Centroid Variation, polar
+    # get a weight x,y
+    x_w, y_w = np.arange(width), np.arange(height)
+    # span into 2D
+    x_w2d, y_w2d = np.meshgrid(x_w, y_w)
+    # multiply and sum
+    x_sum, y_sum = np.multiply(image, x_w2d).sum(), np.multiply(image, y_w2d).sum()
+    # divide
+    x_centroid, y_centroid = x_sum / image.sum(), y_sum / image.sum()
 
-    for y in range(height):
-        for x in range(width):
-            pixel = image[y, x]
-            sum_x += x * pixel
-            sum_y += y * pixel
-            total += pixel
+    #print("Time: {}s".format(time.time() - start))
 
-    centroid_x = sum_x / total
-    centroid_y = sum_y / total
+    return x_centroid, y_centroid
 
-    return centroid_x, centroid_y
 
-centroid_x_values = []
-centroid_y_values = []
+prev_centroid_x = None
+prev_centroid_y = None
+start_time = time.time()
+x_centroid = []
+y_centroid = []
+centroid_distances = []  # List to store centroid distances
+timestamps = []
 
-# For Zoom
-zoom_level = 1.0
 
-#Take it frame by frame faster
+
+# subimage = image[20:24,31:35], subimage*X
+""" 1. Find star routine
+    2. Create sub image
+    3. Improve center of mass efficiency
+"""
+# Take it frame by frame faster
 """For short exposure if we take many frames, S.D. tell seeing
-Does it make any different if we take less frame and do it longer. See if it get the same result."""
+    Does it make any different if we take less frame and do it longer. See if it get the same result."""
 
+camera.start_video_capture()
 while True:
-    frame = camera.capture()  # Capture a frame from the camera
-   
-    # Calculate the zoomed region of interest
-    frame_height, frame_width = frame.shape[:2]
-    zoomed_width = int(frame_width / zoom_level)
-    zoomed_height = int(frame_height / zoom_level)
-    x_offset = (frame_width - zoomed_width) // 2
-    y_offset = (frame_height - zoomed_height) // 2
-    zoomed_frame = frame[y_offset:y_offset+zoomed_height, x_offset:x_offset+zoomed_width]
-    """
-    # Convert frame to grayscale
-    gray_frame = cv2.cvtColor(zoomed_frame, cv2.COLOR_BGR2GRAY)
+    frame = camera.capture_video_frame()  # Capture a frame from the camera
 
-    # Apply thresholding to obtain brightest areas
-    _, thresholded = cv2.threshold(gray_frame, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    x_centroid, y_centroid = find_image_centroid(frame)
 
-    # Find contours of the thresholded areas
-    contours, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Calculate the distance between the current and previous centroid positions using Pythagorean theorem
+    if prev_centroid_x is not None and prev_centroid_y is not None:
+        diff_x = x_centroid - prev_centroid_x
+        diff_y = y_centroid - prev_centroid_y
+        distance = np.sqrt(diff_x**2 + diff_y**2)
+        centroid_distances.append(distance)
 
-    # Find the contour with the largest area
-    if len(contours) > 0:
-        brightest_contour = max(contours, key=cv2.contourArea)
-        moments = cv2.moments(brightest_contour)
+        # Calculate the time elapsed since the starting point
+        current_time = time.time()
+        time_elapsed = current_time - start_time
+        timestamps.append(time_elapsed)
 
-        # Calculate centroid of the brightest area
-        centroid_x = moments['m10'] / moments['m00']
-        centroid_y = moments['m01'] / moments['m00']
+    # Print the centroid coordinates, time elapsed, and centroid distance
+    print("Centroid: ({}, {})".format(x_centroid, y_centroid))
+    if prev_centroid_x is not None and prev_centroid_y is not None:
+        print("Time Elapsed:", time_elapsed, "s")
+        print("Centroid Distance:", distance)
 
-        # Append the centroid x and centroid y values to the lists
-        centroid_x_values.append(centroid_x + x_offset)
-        centroid_y_values.append(centroid_y + y_offset)
+    # Update the previous centroid positions for the next iteration
+    prev_centroid_x = x_centroid
+    prev_centroid_y = y_centroid
 
-        # Draw a green circle at the centroid position
-        cv2.circle(frame, (int(centroid_x + x_offset), int(centroid_y + y_offset)), 5, (0, 255, 0), -1)
-    """
-    # Find the centroid of the zoomed frame
-    centroid_x, centroid_y = find_image_centroid(zoomed_frame)
-
-    # Draw a green circle at the centroid position
-    centroid_x = int(centroid_x) + x_offset
-    centroid_y = int(centroid_y) + y_offset
-    cv2.circle(frame, (centroid_x, centroid_y), 5, (0, 0 , 0), -1)
     
-    # Draw a bounding box around the object based on centroid position
-    box_size = 50  # Size of the bounding box
-    x1 = centroid_x - box_size // 2
-    y1 = centroid_y - box_size // 2
-    x2 = centroid_x + box_size // 2
-    y2 = centroid_y + box_size // 2
-    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-    
-    # Append the centroid x and centroid y values to the lists
-    centroid_x_values.append(centroid_x)
-    centroid_y_values.append(centroid_y)
 
-    # Print the centroid coordinates
-    print("Centroid X:", centroid_x)
-    print("Centroid Y:", centroid_y)
+    #Print the centroid coordinates
+    #print("Centroid X:", centroid_x)
+    #print("Centroid Y:", centroid_y)
 
 
 
     # Display the zoomed frame
-    cv2.imshow("Video", zoomed_frame)
-    
-    plt.ion()
-    """
-    plt.scatter(centroid_x_values, centroid_y_values, c='red')
-    plt.xlim(450,600)
-    plt.ylim(950,1100)
-    plt.xlabel('Centroid X')
-    plt.ylabel('Centroid Y')
-    plt.title('Centroid Position over Time')
-    plt.show()
-    #plt.pause(0.001)
-    #plt.clf()
-    """
-    time = np.arange(len(centroid_x_values))
-    plt.scatter(time, centroid_x_values, label='Centroid X')
-    plt.scatter(time, centroid_y_values, label='Centroid Y')
+    cv2.imshow("Video", frame)
+
+    # Update the plot with the centroid distances over time
+    plt.scatter(timestamps, centroid_distances)
+    plt.ylim(-0.5,0.5)
     plt.xlabel('Time')
-    plt.ylabel('Centroid Position')
-    plt.title('Centroid Position over Time')
-    plt.legend()
-    plt.draw()
+    plt.ylabel('Centroid Distance')
+    plt.title('Centroid Distance between Consecutive Frames')
     plt.pause(0.001)
     plt.clf()
 
-
     key = cv2.waitKey(1)
-    if key == ord('+'):  # Zoom in
-        zoom_level *= 1.1
-    elif key == ord('-'):  # Zoom out
-        zoom_level /= 1.1
-    elif key == ord('q'):  # Quit the program
+   
+    if key == ord('q'):  # Quit the program
         break
     elif key == ord('s'):  # Save the current frame
         filename = input("Enter a filename to save the fits image: ")
@@ -203,14 +172,18 @@ while True:
         hdulist.writeto(filename, overwrite=True)
         print("fits image saved as", filename)
    
-
-# Plot the centroid x and centroid y values over time
-#plt.plot(centroid_x_values, centroid_y_values)
-#plt.xlabel('Centroid X')
-#plt.ylabel('Centroid Y')
-#plt.title('Centroid Position over Time')
-#plt.show()
-
+   
+    """    
+    time = np.arange(len(centroid_distances))
+    plt.scatter(time, centroid_distances)
+    plt.xlabel('Time')
+    plt.ylabel('Centroid Position')
+    plt.title('Centroid Position over Time')
+    plt.legend()
+    plt.draw()
+    plt.pause(0.001)
+    plt.clf()
+    """
 camera.close_camera()
 cv2.destroyAllWindows()
 
