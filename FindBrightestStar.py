@@ -11,58 +11,22 @@ from photutils.detection import DAOStarFinder
 from photutils.aperture import CircularAperture
 from astropy.visualization import SqrtStretch
 from astropy.visualization.mpl_normalize import ImageNormalize
+from Camera import *
 
-#Grab camera frames from ZWO cameras
-#PMH 6/29/23
-#Following example from https://rk.edu.pl/en/scripting-machine-vision-and-astronomical-cameras-python/
-#More code also at: https://github.com/python-zwoasi/python-zwoasi/blob/master/zwoasi/examples/zwoasi_demo.py
-
-#Below didn't seem to work.  Eventaully, this is the write way to setup installation of the .dylib file
-#env_filename = os.getenv('ZWO_ASI_LIB')
-#print (env_filename)
-
-path = '/Users/piramonkumnurdmanee/Documents/lamat-python/venv/lib/python3.10/site-packages/libASICamera2.dylib'		#hardcoded path. Needs to be adjusted on each computer 
-
-asi.init(path)   #The first time this is run you will need to go to your System Preferences under "Security and Privacy" and click "Open Anyway"
-
-num_cameras = asi.get_num_cameras()
-if num_cameras == 0:
-    raise ValueError('No cameras found')
-
-camera_id = 0  # use first camera from list
-cameras_found = asi.list_cameras()
-print(cameras_found)
-
-camera = asi.Camera(camera_id)
-camera_info = camera.get_camera_property()
-print(camera_info)
-
-# Get all of the camera controls
-print('')
-print('Camera controls:')
-controls = camera.get_controls()
-for cn in sorted(controls.keys()):
-    print('    %s:' % cn)
-    for k in sorted(controls[cn].keys()):
-        print('        %s: %s' % (k, repr(controls[cn][k])))
-
-# Use minimum USB bandwidth permitted
-camera.set_control_value(asi.ASI_BANDWIDTHOVERLOAD, camera.get_controls()['BandWidth']['MinValue'])
-
-# Set some sensible defaults. They will need adjusting depending upon
-# the sensitivity, lens and lighting conditions used.
-camera.disable_dark_subtract()
-
-camera.set_control_value(asi.ASI_GAIN, 100)
-camera.set_control_value(asi.ASI_HIGH_SPEED_MODE, 1) 
-camera.set_control_value(asi.ASI_EXPOSURE, 130000) # microseconds   This saturated the images
-camera.set_control_value(asi.ASI_EXPOSURE, 8000) # microseconds		Nominal value
-camera.set_control_value(asi.ASI_WB_B, 99)
-camera.set_control_value(asi.ASI_WB_R, 75)
-camera.set_control_value(asi.ASI_GAMMA, 50)
-camera.set_control_value(asi.ASI_BRIGHTNESS, 50)
-camera.set_control_value(asi.ASI_FLIP, 0)
-
+camera = getCamera()
+camera = setCamera(camera, [
+    # Use minimum USB bandwidth permitted
+    (asi.ASI_BANDWIDTHOVERLOAD, camera.get_controls()['BandWidth']['MinValue']),
+    (asi.ASI_GAIN, 100),
+    (asi.ASI_HIGH_SPEED_MODE, 1),
+    (asi.ASI_EXPOSURE, 130000), # microseconds   This saturated the images
+    (asi.ASI_EXPOSURE, 8000), # microseconds		Nominal value
+    (asi.ASI_WB_B, 99),
+    (asi.ASI_WB_R, 75),
+    (asi.ASI_GAMMA, 50),
+    (asi.ASI_BRIGHTNESS, 50),
+    (asi.ASI_FLIP, 0)
+    ])
 
 #Documentation says the ASI-290mm has 12 bit depth.  But the SDK has no ASI_IMG_RAW12.  Maybe 16 bit is how you get it?
 
@@ -135,6 +99,8 @@ while True:
     plt.ylabel('Centroid Y')
     plt.title('Motion of Centroid Over Time')
     plt.show()
+    plt.pause(0.001)
+    plt.clf()
 
 camera.close_camera()
 plt.close()
