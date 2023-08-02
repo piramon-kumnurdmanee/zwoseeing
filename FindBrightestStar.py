@@ -21,7 +21,7 @@ from astropy.visualization.mpl_normalize import ImageNormalize
 #env_filename = os.getenv('ZWO_ASI_LIB')
 #print (env_filename)
 
-path = '/Users/piramonkumnurdmanee/Documents/lamat-python/venv/lib/python3.10/site-packages/libASICamera2.dylib'		#hardcoded path. Needs to be adjusted on each computer 
+path = '/Users/piramonkumnurdmanee/Documents/zwoseeing/venv/lib/python3.10/site-packages/libASICamera2.dylib'		#hardcoded path. Needs to be adjusted on each computer 
 
 asi.init(path)   #The first time this is run you will need to go to your System Preferences under "Security and Privacy" and click "Open Anyway"
 
@@ -79,13 +79,21 @@ star_radius = 20  # Radius of the circle around the brightest source
 centroid_x_values = []
 centroid_y_values = []
 
-while True:
-    frame = camera.capture()  # Capture a frame from the camera
-    data = frame  # The frame represents a grayscale image
+fig, axes = plt.subplots(1, 2, figsize=(10,5))
 
-    mean, median, std = sigma_clipped_stats(data, sigma=3.0)
+def plot_centroid(centroid_x_values, centroid_y_values):
+    plt.scatter(centroid_x_values, centroid_y_values, marker='o', color='b')
+    plt.title('Motion of Centroid Over Time')
+    plt.pause(0.001)
+    # plt.clf()
+
+camera.start_video_capture()
+while True:
+
+    frame = camera.capture_video_frame() # Capture a frame from the camera
+    mean, median, std = sigma_clipped_stats(frame, sigma=3.0)
     threshold = 5.0 * std
-    tbl = DAOStarFinder(fwhm=3.0, threshold=threshold)(data - median)
+    tbl = DAOStarFinder(fwhm=3.0, threshold=threshold)(frame - median)
     print(std)
 
     # Check if sources were found in the frame
@@ -100,7 +108,7 @@ while True:
 
         # Display the image with apertures
         norm = ImageNormalize(stretch=SqrtStretch())
-        plt.imshow(data, cmap='Greys', origin='lower', norm=norm, interpolation='nearest')
+        plt.imshow(frame, cmap='Greys', origin='lower', norm=norm, interpolation='nearest')
         apertures.plot(color='blue', lw=1.5, alpha=0.5)
 
         # Draw a circle around the brightest source
@@ -116,34 +124,34 @@ while True:
         # Store the centroid positions for plotting
         centroid_x_values.append(brightest_source_x)
         centroid_y_values.append(brightest_source_y)
+        plot_centroid(centroid_x_values, centroid_y_values)
+
+        plt.pause(0.001)
+
 
 
     else:
         # If no sources were found, you can display the frame without apertures or circles.
         norm = ImageNormalize(stretch=SqrtStretch())
-        plt.imshow(data, cmap='Greys', origin='lower', norm=norm, interpolation='nearest')
+        plt.imshow(frame, cmap='Greys', origin='lower', norm=norm, interpolation='nearest')
         plt.title("No Bright Sources Found - Press 'q' to stop")
         plt.pause(0.001)
+    
+    cv2.imshow(resultname, frame)
 
-    key = cv2.waitKey(1)
-    if key == ord('q'):  # Quit the program
+    # Check if the user pressed 'q' to quit
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-    plt.figure()
-    plt.plot(centroid_x_values, centroid_y_values, marker='o', linestyle='-', color='b')
     plt.xlabel('Centroid X')
     plt.ylabel('Centroid Y')
-    plt.title('Motion of Centroid Over Time')
-    plt.show()
+    #plot_centroid(centroid_x_values, centroid_y_values)
+    # plt.clf()
 
 camera.close_camera()
-plt.close()
 plt.ioff()
+plt.show()  # Show the final centroid plot when the loop is exited
+cv2.destroyAllWindows()
 
-# %%
-from matplotlib import pyplot as plt
-plt.plot([1, 2, 3], [2, 3, 4])
-plt.title(r"$\frac{x}{y}$")
-# %%
 
 # 300 frames then find the Standard Deviation
